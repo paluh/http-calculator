@@ -60,7 +60,7 @@ sub db value = do
 reset :: IORef State -> IO State
 reset db = do
   modifyIORef db (const $ empty)
-  pure empty
+  readIORef db
 
 calculatorAPI :: Proxy Calculator
 calculatorAPI = Proxy
