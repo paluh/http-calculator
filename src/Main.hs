@@ -36,39 +36,37 @@ import Text.Blaze.Html.Renderer.Utf8
 import qualified Data.Aeson.Parser
 import qualified Text.Blaze.Html
 
-data State = State
-  { sum :: Int
-  , operands :: [Int]
-  } deriving (Eq, Show, Generic)
-instance ToJSON State
+type State = [Int]
+data ResponseBody = ResponseBody { result :: Int, operands :: [Int] }
+  deriving (Eq, Show, Generic)
+instance ToJSON ResponseBody
+
+toResponseBody :: State -> ResponseBody
+toResponseBody ops = ResponseBody (sum ops) ops
 
 type Calculator
-  = "add" :> Capture "x" Int :> Get '[JSON] State
-  :<|> "sub" :> Capture "y" Int :> Get '[JSON] State
-  :<|> "reset" :> Get '[JSON] State
+  = "add" :> Capture "x" Int :> Get '[JSON] ResponseBody
+  :<|> "sub" :> Capture "y" Int :> Get '[JSON] ResponseBody
+  :<|> "reset" :> Get '[JSON] ResponseBody
 
-add :: IORef State -> Int -> IO State
+add :: IORef State -> Int -> IO ResponseBody
 add db value =
-  atomicModifyIORef' db (\(State s ops) -> let n = State (s + value) (value : ops) in (n, n))
+  atomicModifyIORef' db (\ops -> let n = (value : ops) in (n, toResponseBody n))
 
-sub :: IORef State -> Int -> IO State
+sub :: IORef State -> Int -> IO ResponseBody
 sub db value =
-  atomicModifyIORef' db (\(State s ops) -> let n = State (s - value) ((-1) * value : ops) in (n, n))
+  atomicModifyIORef' db (\ops -> let n = ((-1) * value : ops) in (n, toResponseBody n))
 
-reset :: IORef State -> IO State
+reset :: IORef State -> IO ResponseBody
 reset db =
-  atomicModifyIORef' db (const $ (empty, empty))
+  atomicModifyIORef' db (const $ ([], toResponseBody []))
 
 calculatorAPI :: Proxy Calculator
 calculatorAPI = Proxy
 
--- | Do we want Monoid for this?
-empty = State 0 []
-
-
 main :: IO ()
 main = do
-  db <- newIORef empty
+  db <- newIORef []
   let
     server db = (liftIO . add db) :<|> (liftIO . sub db) :<|> (liftIO $ reset db)
   run 8081 (serve calculatorAPI (server db))
