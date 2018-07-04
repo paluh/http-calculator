@@ -14,6 +14,7 @@ import Prelude ()
 import Prelude.Compat
 
 import Control.Monad.Except
+import Control.Monad.Reader
 import Data.Aeson.Types
 import Data.IORef (atomicModifyIORef', IORef, newIORef, modifyIORef, readIORef, writeIORef)
 import GHC.Generics
@@ -26,6 +27,8 @@ data ResponseBody = ResponseBody { result :: Int, operands :: [Int] }
   deriving (Eq, Show, Generic)
 instance ToJSON ResponseBody
 
+type AppM = ReaderT (IORef Db) Handler
+
 toResponseBody :: Db -> ResponseBody
 toResponseBody ops = ResponseBody (sum ops) ops
 
@@ -34,17 +37,20 @@ type Calculator
   :<|> "sub" :> Capture "y" Int :> Get '[JSON] ResponseBody
   :<|> "reset" :> Get '[JSON] ResponseBody
 
-add :: IORef Db -> Int -> IO ResponseBody
-add db value =
-  atomicModifyIORef' db (\ops -> let n = (value : ops) in (n, toResponseBody n))
+add :: Int -> AppM ResponseBody
+add value = do
+  db <- ask
+  liftIO $ atomicModifyIORef' db (\ops -> let n = (value : ops) in (n, toResponseBody n))
 
-sub :: IORef Db -> Int -> IO ResponseBody
-sub db value =
-  atomicModifyIORef' db (\ops -> let n = ((-1) * value : ops) in (n, toResponseBody n))
+sub :: Int -> AppM ResponseBody
+sub value = do
+  db <- ask
+  liftIO $ atomicModifyIORef' db (\ops -> let n = ((-1) * value : ops) in (n, toResponseBody n))
 
-reset :: IORef Db -> IO ResponseBody
-reset db =
-  atomicModifyIORef' db (const $ ([], toResponseBody []))
+reset :: AppM ResponseBody
+reset = do
+  db <- ask
+  liftIO $ atomicModifyIORef' db (const $ ([], toResponseBody []))
 
 calculatorAPI :: Proxy Calculator
 calculatorAPI = Proxy
@@ -53,6 +59,6 @@ main :: IO ()
 main = do
   db <- newIORef []
   let
-    server db = (liftIO . add db) :<|> (liftIO . sub db) :<|> (liftIO $ reset db)
-  run 8081 (serve calculatorAPI (server db))
+    server = hoistServer calculatorAPI (flip runReaderT db) (add :<|> sub :<|> reset)
+  run 8081 (serve calculatorAPI server)
 
