@@ -19,7 +19,7 @@ import Data.Aeson.Compat
 import Data.Aeson.Types
 import Data.Attoparsec.ByteString
 import Data.ByteString (ByteString)
-import Data.IORef (IORef, newIORef, modifyIORef, readIORef, writeIORef)
+import Data.IORef (atomicModifyIORef', IORef, newIORef, modifyIORef, readIORef, writeIORef)
 import Data.List
 import Data.Maybe
 import Data.String.Conversions
@@ -48,19 +48,16 @@ type Calculator
   :<|> "reset" :> Get '[JSON] State
 
 add :: IORef State -> Int -> IO State
-add db value = do
-  modifyIORef db (\(State s ops) -> State (s + value) (value : ops))
-  readIORef db
+add db value =
+  atomicModifyIORef' db (\(State s ops) -> let n = State (s + value) (value : ops) in (n, n))
 
 sub :: IORef State -> Int -> IO State
-sub db value = do
-  modifyIORef db (\(State s ops) -> State (s - value) ((-1) * value : ops))
-  readIORef db
+sub db value =
+  atomicModifyIORef' db (\(State s ops) -> let n = State (s - value) ((-1) * value : ops) in (n, n))
 
 reset :: IORef State -> IO State
-reset db = do
-  modifyIORef db (const $ empty)
-  readIORef db
+reset db =
+  atomicModifyIORef' db (const $ (empty, empty))
 
 calculatorAPI :: Proxy Calculator
 calculatorAPI = Proxy
